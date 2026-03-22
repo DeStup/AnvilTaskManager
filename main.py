@@ -1331,41 +1331,6 @@ async def show_task_list(interaction: discord.Interaction, filter_type: str = "a
     embed = view._create_embed(current_items, start_idx + 1, end_idx)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-
-async def show_archive(interaction: discord.Interaction):
-    """Показать архив завершенных задач"""
-
-    tasks = db.fetch_all('''
-        SELECT * FROM tasks 
-        WHERE status = 'completed'
-        ORDER BY completed_at DESC
-    ''')
-    tasks = [dict(task) for task in tasks]
-
-    if not tasks:
-        embed = discord.Embed(
-            title="📦 Архив задач",
-            description="Завершенных задач пока нет.",
-            color=discord.Color.blue()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    view = PaginationView(
-        user_id=interaction.user.id,
-        items=tasks,
-        items_per_page=10,
-        title="📦 Архив задач",  # Убрано "завершенных"
-        color=discord.Color.purple()
-    )
-
-    start_idx = 0
-    end_idx = min(10, len(tasks))
-    current_items = tasks[start_idx:end_idx]
-    embed = view._create_embed(current_items, start_idx + 1, end_idx)
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
 async def show_archive(interaction: discord.Interaction):
     """Показать архив завершенных задач"""
 
