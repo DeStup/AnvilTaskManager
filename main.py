@@ -1022,7 +1022,7 @@ async def complete_task_action(interaction: discord.Interaction, task_id: str, c
     task = db.fetch_one('SELECT * FROM tasks WHERE id = ? AND executor_id = ? AND status = "in_progress"',
                         (task_id, str(interaction.user.id)))
     if not task:
-        await interaction.response.send_message("❌ Не удалось завершить задачу.", ephemeral=True)
+        await interaction.response.send_message("❌ Вы не можете завершить чужую задачу.", ephemeral=True)
         return
 
     db.execute('UPDATE tasks SET status = "pending_approval" WHERE id = ?', (task_id,))
@@ -1060,7 +1060,7 @@ async def abandon_task_action(interaction: discord.Interaction, task_id: str, re
     task = db.fetch_one('SELECT * FROM tasks WHERE id = ? AND executor_id = ? AND status = "in_progress"',
                         (task_id, str(interaction.user.id)))
     if not task:
-        await interaction.response.send_message("❌ Не удалось отказаться от задачи.", ephemeral=True)
+        await interaction.response.send_message("❌ Вы не можете отказаться от чужой задачи.", ephemeral=True)
         return
 
     db.execute(
@@ -1167,7 +1167,7 @@ async def return_task_action(interaction: discord.Interaction, task_id: str, rea
         await interaction.response.send_message("❌ Задача не найдена.", ephemeral=True)
         return
     if task['author_id'] != str(interaction.user.id) and not has_permission(interaction):
-        await interaction.response.send_message("❌ Только автор может вернуть задачу.", ephemeral=True)
+        await interaction.response.send_message("❌ Только автор может вернуть задачу в работу.", ephemeral=True)
         return
 
     task_dict = {key: task[key] for key in task.keys()}
@@ -1590,7 +1590,7 @@ async def on_ready():
 @bot.tree.command(name="menu", description="Показать меню")
 async def menu(interaction: discord.Interaction):
     if not has_permission(interaction):
-        await interaction.response.send_message("❌ Нет доступа.", ephemeral=True)
+        await interaction.response.send_message("❌ Меню для администраторов.", ephemeral=True)
         return
     embed = discord.Embed(title="📋 Управление задачами", description="Используйте кнопки:", color=discord.Color.blue())
     embed.add_field(name="Доступные действия:", value="**➕ Добавить** - /add\n**📋 Список** - /list\n**🏆 Рейтинг** - /rating\n**🗑️ Удалить** - в меню", inline=False)
