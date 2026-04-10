@@ -1220,7 +1220,7 @@ async def delete_task_action(interaction: discord.Interaction, task_id: str):
     is_admin_or_dev = has_permission(interaction)
 
     if not (is_author or is_admin_or_dev):
-        await interaction.response.send_message("❌ Вы не можете удалить эту задачу.", ephemeral=True)
+        await interaction.response.send_message("❌ Вы не можете удалить чужую задачу.", ephemeral=True)
         return
 
     task_dict = {key: task[key] for key in task.keys()}
