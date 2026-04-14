@@ -198,7 +198,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS participants (
                 user_id TEXT PRIMARY KEY,
                 user_name TEXT NOT NULL,
-                completed_tasks INTEGER DEFAULT 0,
+                closed_tasks INTEGER DEFAULT 0,
                 created_tasks INTEGER DEFAULT 0,
                 resolved_tasks INTEGER DEFAULT 0
             )
@@ -231,37 +231,21 @@ class Database:
         return results
 
     def update_participant(self, user_id: str, user_name: str,
-                           completed_delta: int = 0, created_delta: int = 0, resolved_delta: int = 0):
+                           closed_delta: int = 0, created_delta: int = 0, resolved_delta: int = 0):
         """Обновляет статистику участника"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Проверяем существование колонки resolved_tasks
-        cursor.execute("PRAGMA table_info(participants)")
-        columns = [col[1] for col in cursor.fetchall()]
-        has_resolved = 'resolved_tasks' in columns
-
-        if has_resolved:
-            cursor.execute('''
-                INSERT INTO participants (user_id, user_name, completed_tasks, created_tasks, resolved_tasks)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    user_name = excluded.user_name,
-                    completed_tasks = completed_tasks + ?,
-                    created_tasks = created_tasks + ?,
-                    resolved_tasks = resolved_tasks + ?
-            ''', (user_id, user_name, completed_delta, created_delta, resolved_delta,
-                  completed_delta, created_delta, resolved_delta))
-        else:
-            # Для обратной совместимости
-            cursor.execute('''
-                INSERT INTO participants (user_id, user_name, completed_tasks, created_tasks)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    user_name = excluded.user_name,
-                    completed_tasks = completed_tasks + ?,
-                    created_tasks = created_tasks + ?
-            ''', (user_id, user_name, completed_delta, created_delta, completed_delta, created_delta))
+        cursor.execute('''
+            INSERT INTO participants (user_id, user_name, closed_tasks, created_tasks, resolved_tasks)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                user_name = excluded.user_name,
+                closed_tasks = closed_tasks + ?,
+                created_tasks = created_tasks + ?,
+                resolved_tasks = resolved_tasks + ?
+        ''', (user_id, user_name, closed_delta, created_delta, resolved_delta,
+              closed_delta, created_delta, resolved_delta))
 
         conn.commit()
         conn.close()
@@ -506,7 +490,7 @@ class RatingCorrectionModal(Modal, title="📊 Изменение рейтинг
             # Обновляем рейтинг
             db.execute('''
                 UPDATE participants 
-                SET completed_tasks = ?
+                SET closed_tasks = ?
                 WHERE user_id = ?
             ''', (new_value, self.user_id))
 
@@ -782,7 +766,7 @@ class RatingPaginationView(BaseView):
             embed.add_field(
                 name="\u200b",  # Невидимый разделитель
                 value=(
-                    f"{medal}<@{user_id}> - {item['completed_tasks']}"
+                    f"{medal}<@{user_id}> - {item['resolved_tasks']}"
                 ),
                 inline=False
             )
@@ -1127,10 +1111,9 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str):
     if task_dict.get('executor_id'):
         db.update_participant(task_dict['executor_id'], task_dict['executor_name'], resolved_delta=1)
 
-    # 2. Автор получает +1 в created_tasks (уже начислено при создании)
-    #    и +1 в completed_tasks (за то что подтвердил)
+    # 2. Автор получает +1 в closed_tasks (за то что подтвердил)
     if task_dict.get('author_id'):
-        db.update_participant(task_dict['author_id'], task_dict['author_name'], completed_delta=1)
+        db.update_participant(task_dict['author_id'], task_dict['author_name'], closed_delta=1)
 
     action_logger.info(f"{get_user_info(interaction)} confirmed task {task_id}")
 
@@ -1140,7 +1123,7 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str):
         f"**ID:** {task_id}",
         f"**Автор:** <@{task_dict['author_id']}>",
         f"**Исполнитель:** <@{task_dict['executor_id']}>" if task_dict.get('executor_id') else None,
-        f"**Начислено:** Исполнитель +1 resolved, Автор +1 completed"
+        f"**Начислено:** Исполнитель +1 resolved, Автор +1 closed"
     ]
     message_parts = [p for p in message_parts if p]
     if task_link:
@@ -1370,9 +1353,9 @@ async def show_rating(interaction: discord.Interaction):
 
     # Получаем всех участников с их статистикой
     participants = db.fetch_all('''
-        SELECT user_id, completed_tasks
+        SELECT user_id, resolved_tasks
         FROM participants
-        ORDER BY completed_tasks DESC
+        ORDER BY resolved_tasks DESC
     ''')
 
     # Преобразуем в список словарей
@@ -1490,9 +1473,9 @@ class TaskMenuView(BaseView):
 
         # Получаем список участников
         participants = db.fetch_all('''
-            SELECT user_id, user_name, completed_tasks
+            SELECT user_id, user_name, resolved_tasks
             FROM participants
-            ORDER BY completed_tasks DESC
+            ORDER BY resolved_tasks DESC
         ''')
 
         if not participants:
@@ -1520,9 +1503,9 @@ class RatingCorrectionSelect(Select):
         for p in participants:
             name = p['user_name'][:50]
             options.append(discord.SelectOption(
-                label=f"{name} ({p['completed_tasks']})",
+                label=f"{name} ({p['resolved_tasks']})",
                 value=p['user_id'],
-                description=f"Текущий рейтинг: {p['completed_tasks']}",
+                description=f"Текущий рейтинг: {p['resolved_tasks']}",
                 emoji="🏆"
             ))
 
@@ -1542,7 +1525,7 @@ class RatingCorrectionSelect(Select):
             await interaction.response.send_message("❌ Пользователь не найден.", ephemeral=True)
             return
 
-        modal = RatingCorrectionModal(user_id, participant['user_name'], participant['completed_tasks'])
+        modal = RatingCorrectionModal(user_id, participant['user_name'], participant['resolved_tasks'])
         await interaction.response.send_modal(modal)
 
 

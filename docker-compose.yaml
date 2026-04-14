@@ -10,6 +10,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    command: sh -c "python main.py 2>> /app/logs/errors.log 1>> /app/logs/output.log"
     ports:
       - 8452:8452
-
