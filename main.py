@@ -85,6 +85,10 @@ CLEAR_TYPES = {
     "archive": {"name": "Очистить архив", "emoji": "📦", "description": "Удалить все завершенные задачи"}
 }
 
+# ============== НАСТРОЙКИ НАЧИСЛЕНИЯ очков ==============
+POINTS_EXECUTOR = 2  # Баллы исполнителю за выполненную задачу
+POINTS_AUTHOR = 1    # Баллы автору за подтверждение задачи
+
 ALLOWED_USERS = [int(x) for x in os.getenv("ALLOWED_USERS", "").split(",") if x]
 
 
@@ -186,12 +190,15 @@ class Database:
             )
         ''')
 
-        # Обновляем таблицу participants - добавляем колонку resolved_tasks если её нет
+        # Обновляем таблицу participants - добавляем колонки если их нет
         cursor.execute("PRAGMA table_info(participants)")
         columns = [col[1] for col in cursor.fetchall()]
 
         if 'resolved_tasks' not in columns:
             cursor.execute('ALTER TABLE participants ADD COLUMN resolved_tasks INTEGER DEFAULT 0')
+
+        if 'points' not in columns:
+            cursor.execute('ALTER TABLE participants ADD COLUMN points INTEGER DEFAULT 0')
 
         # Создаем таблицу если её нет
         cursor.execute('''
@@ -200,7 +207,8 @@ class Database:
                 user_name TEXT NOT NULL,
                 closed_tasks INTEGER DEFAULT 0,
                 created_tasks INTEGER DEFAULT 0,
-                resolved_tasks INTEGER DEFAULT 0
+                resolved_tasks INTEGER DEFAULT 0,
+                points INTEGER DEFAULT 0
             )
         ''')
 
@@ -231,21 +239,23 @@ class Database:
         return results
 
     def update_participant(self, user_id: str, user_name: str,
-                           closed_delta: int = 0, created_delta: int = 0, resolved_delta: int = 0):
+                           closed_delta: int = 0, created_delta: int = 0,
+                           resolved_delta: int = 0, points_delta: int = 0):
         """Обновляет статистику участника"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO participants (user_id, user_name, closed_tasks, created_tasks, resolved_tasks)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO participants (user_id, user_name, closed_tasks, created_tasks, resolved_tasks, points)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 user_name = excluded.user_name,
                 closed_tasks = closed_tasks + ?,
                 created_tasks = created_tasks + ?,
-                resolved_tasks = resolved_tasks + ?
-        ''', (user_id, user_name, closed_delta, created_delta, resolved_delta,
-              closed_delta, created_delta, resolved_delta))
+                resolved_tasks = resolved_tasks + ?,
+                points = points + ?
+        ''', (user_id, user_name, closed_delta, created_delta, resolved_delta, points_delta,
+              closed_delta, created_delta, resolved_delta, points_delta))
 
         conn.commit()
         conn.close()
@@ -458,23 +468,23 @@ class ClearView(View):
         self.add_item(ClearSelect())
 
 
-class RatingCorrectionModal(Modal, title="📊 Изменение рейтинга"):
-    """Модальное окно для ввода нового значения рейтинга"""
+class RatingCorrectionModal(Modal, title="📊 Изменение очков"):
+    """Модальное окно для ввода нового значения очков"""
 
     new_rating = TextInput(
-        label="Новый рейтинг",
-        placeholder="Введите новое значение рейтинга...",
+        label="Новое количество очков",
+        placeholder="Введите новое значение очков...",
         required=True,
         min_length=1,
         max_length=10
     )
 
-    def __init__(self, user_id: str, user_name: str, current_rating: int):
+    def __init__(self, user_id: str, user_name: str, current_points: int):
         super().__init__()
         self.user_id = user_id
         self.user_name = user_name
-        self.current_rating = current_rating
-        self.new_rating.placeholder = f"Текущий рейтинг: {current_rating}"
+        self.current_points = current_points
+        self.new_rating.placeholder = f"Текущие баллы: {current_points}"
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -482,37 +492,37 @@ class RatingCorrectionModal(Modal, title="📊 Изменение рейтинг
 
             if new_value < 0:
                 await interaction.response.send_message(
-                    "❌ Рейтинг не может быть отрицательным!",
+                    "❌ Баллы не могут быть отрицательными!",
                     ephemeral=True
                 )
                 return
 
-            # Обновляем рейтинг
+            # Обновляем баллы
             db.execute('''
                 UPDATE participants 
-                SET closed_tasks = ?
+                SET points = ?
                 WHERE user_id = ?
             ''', (new_value, self.user_id))
 
             # Логируем в файл
             action_logger.info(
-                f"{get_user_info(interaction)} changed rating for {self.user_name} (ID: {self.user_id}) "
-                f"from {self.current_rating} to {new_value}"
+                f"{get_user_info(interaction)} changed points for {self.user_name} (ID: {self.user_id}) "
+                f"from {self.current_points} to {new_value}"
             )
 
             # Отправляем лог в канал
             await send_simple_log(
                 interaction.client,
-                f"📊 **Коррекция рейтинга**",
+                f"📊 **Коррекция очков**",
                 interaction.user.mention,
                 discord.Color.blue(),
                 f"**Пользователь:** <@{self.user_id}>\n"
-                f"**Было:** {self.current_rating}\n"
+                f"**Было:** {self.current_points}\n"
                 f"**Стало:** {new_value}"
             )
 
             await interaction.response.send_message(
-                f"✅ Рейтинг пользователя <@{self.user_id}> изменён с {self.current_rating} на {new_value}!",
+                f"✅ Баллы пользователя <@{self.user_id}> изменены с {self.current_points} на {new_value}!",
                 ephemeral=True
             )
 
@@ -522,7 +532,7 @@ class RatingCorrectionModal(Modal, title="📊 Изменение рейтинг
                 ephemeral=True
             )
         except Exception as e:
-            error_logger.error(f"Error correcting rating: {e}", exc_info=True)
+            error_logger.error(f"Error correcting points: {e}", exc_info=True)
             await interaction.response.send_message(
                 f"❌ Ошибка: {str(e)}",
                 ephemeral=True
@@ -721,7 +731,7 @@ class RatingPaginationView(BaseView):
     async def _create_embed(self, items: List[dict], start_num: int, end_num: int,
                             interaction: discord.Interaction) -> discord.Embed:
         embed = discord.Embed(
-            title="🏆 Рейтинг исполнителей",
+            title="🏆 Рейтинг",
             color=discord.Color.gold()
         )
 
@@ -748,25 +758,10 @@ class RatingPaginationView(BaseView):
 
             user_id = item['user_id']
 
-            # Получаем актуальный никнейм пользователя (для отображения)
-            display_name = "Неизвестный пользователь"
-            if user_id in members:
-                member = members[user_id]
-                display_name = member.display_name
-            else:
-                try:
-                    user = await interaction.client.fetch_user(int(user_id))
-                    display_name = user.display_name
-                except Exception as e:
-                    error_logger.error(f"Error fetching user {user_id}: {e}")
-                    display_name = f"User {user_id[:6]}"
-
-            # ВАЖНО: упоминание помещаем в value, а не в name
-            # В name оставляем только медаль и никнейм (для красоты)
             embed.add_field(
-                name="\u200b",  # Невидимый разделитель
+                name="\u200b",
                 value=(
-                    f"{medal}<@{user_id}> - {item['resolved_tasks']}"
+                    f"{medal}<@{user_id}> - {item['points']} о."
                 ),
                 inline=False
             )
@@ -1106,14 +1101,24 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str):
     db.execute('UPDATE tasks SET status = "completed", completed_at = ? WHERE id = ?',
                (datetime.now().isoformat(), task_id))
 
-    # Начисляем очки:
-    # 1. Исполнитель получает +1 в resolved_tasks (выполненные задачи)
+    # Начисляем очки и баллы:
+    # 1. Исполнитель получает +1 в resolved_tasks и +POINTS_EXECUTOR очков
     if task_dict.get('executor_id'):
-        db.update_participant(task_dict['executor_id'], task_dict['executor_name'], resolved_delta=1)
+        db.update_participant(
+            task_dict['executor_id'],
+            task_dict['executor_name'],
+            resolved_delta=1,
+            points_delta=POINTS_EXECUTOR
+        )
 
-    # 2. Автор получает +1 в closed_tasks (за то что подтвердил)
+    # 2. Автор получает +1 в closed_tasks и +POINTS_AUTHOR очков
     if task_dict.get('author_id'):
-        db.update_participant(task_dict['author_id'], task_dict['author_name'], closed_delta=1)
+        db.update_participant(
+            task_dict['author_id'],
+            task_dict['author_name'],
+            closed_delta=1,
+            points_delta=POINTS_AUTHOR
+        )
 
     action_logger.info(f"{get_user_info(interaction)} confirmed task {task_id}")
 
@@ -1123,7 +1128,7 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str):
         f"**ID:** {task_id}",
         f"**Автор:** <@{task_dict['author_id']}>",
         f"**Исполнитель:** <@{task_dict['executor_id']}>" if task_dict.get('executor_id') else None,
-        f"**Начислено:** Исполнитель +1 resolved, Автор +1 closed"
+        f"**Начислено:** Исполнитель +{POINTS_EXECUTOR} о., Автор +{POINTS_AUTHOR} о."
     ]
     message_parts = [p for p in message_parts if p]
     if task_link:
@@ -1349,13 +1354,13 @@ async def show_archive(interaction: discord.Interaction):
 
 
 async def show_rating(interaction: discord.Interaction):
-    """Показать рейтинг исполнителей с пагинацией и упоминаниями"""
+    """Показать рейтинг по баллам с пагинацией и упоминаниями"""
 
-    # Получаем всех участников с их статистикой
+    # Получаем всех участников с их баллами
     participants = db.fetch_all('''
-        SELECT user_id, resolved_tasks
+        SELECT user_id, points
         FROM participants
-        ORDER BY resolved_tasks DESC
+        ORDER BY points DESC
     ''')
 
     # Преобразуем в список словарей
@@ -1364,8 +1369,8 @@ async def show_rating(interaction: discord.Interaction):
     if not participants:
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="🏆 Рейтинг исполнителей",
-                description="Пока нет участников с выполненными задачами.",
+                title="🏆 Рейтинг по баллам",
+                description="Пока нет участников с баллами.",
                 color=discord.Color.blue()
             ),
             ephemeral=True
@@ -1462,32 +1467,32 @@ class TaskMenuView(BaseView):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     async def correction_button(self, interaction: discord.Interaction):
-        """Кнопка коррекции рейтинга"""
+        """Кнопка коррекции очков"""
         # Проверка прав
         if not has_permission(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав на коррекцию рейтинга.",
+                "❌ У вас нет прав на коррекцию очков.",
                 ephemeral=True
             )
             return
 
         # Получаем список участников
         participants = db.fetch_all('''
-            SELECT user_id, user_name, resolved_tasks
+            SELECT user_id, user_name, points
             FROM participants
-            ORDER BY resolved_tasks DESC
+            ORDER BY points DESC
         ''')
 
         if not participants:
             await interaction.response.send_message(
-                "❌ Нет участников для коррекции рейтинга.",
+                "❌ Нет участников для коррекции очков.",
                 ephemeral=True
             )
             return
 
         embed = discord.Embed(
-            title="📊 Коррекция рейтинга",
-            description="Выберите пользователя для изменения рейтинга.",
+            title="📊 Коррекция очков",
+            description="Выберите пользователя для изменения количества очков.",
             color=discord.Color.blue()
         )
 
@@ -1503,9 +1508,9 @@ class RatingCorrectionSelect(Select):
         for p in participants:
             name = p['user_name'][:50]
             options.append(discord.SelectOption(
-                label=f"{name} ({p['resolved_tasks']})",
+                label=f"{name} ({p['points']})",
                 value=p['user_id'],
-                description=f"Текущий рейтинг: {p['resolved_tasks']}",
+                description=f"Текущие баллы: {p['points']}",
                 emoji="🏆"
             ))
 
@@ -1525,7 +1530,7 @@ class RatingCorrectionSelect(Select):
             await interaction.response.send_message("❌ Пользователь не найден.", ephemeral=True)
             return
 
-        modal = RatingCorrectionModal(user_id, participant['user_name'], participant['resolved_tasks'])
+        modal = RatingCorrectionModal(user_id, participant['user_name'], participant['points'])
         await interaction.response.send_modal(modal)
 
 
