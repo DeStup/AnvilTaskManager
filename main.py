@@ -23,6 +23,7 @@ log_formatter = logging.Formatter(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
+TASKS_CHANNEL_ID=int(os.getenv("TASKS_CHANNEL_ID", 0))  # ID канала, куда будут публиковаться задачи
 
 action_logger = logging.getLogger('task_actions')
 action_handler = RotatingFileHandler(
@@ -308,23 +309,31 @@ class TaskDescriptionModal(Modal, title="📝 Новая задача"):
             embed.add_field(name="⚙️ Исполнитель", value="❌ Не назначен", inline=True)
             embed.set_footer(text=f"ID: {task_id}")
 
-            message = await interaction.channel.send(embed=embed, view=PersistentTaskView(task_id))
+            # ========== ИЗМЕНЕНИЕ ЗДЕСЬ ==========
+            TASKS_CHANNEL_ID = int(os.getenv("TASKS_CHANNEL_ID", 0))
+
+            if TASKS_CHANNEL_ID:
+                target_channel = interaction.client.get_channel(TASKS_CHANNEL_ID)
+                if not target_channel:
+                    target_channel = await interaction.client.fetch_channel(TASKS_CHANNEL_ID)
+                message = await target_channel.send(embed=embed, view=PersistentTaskView(task_id))
+            else:
+                message = await interaction.channel.send(embed=embed, view=PersistentTaskView(task_id))
+            # ====================================
 
             db.execute('UPDATE tasks SET channel_id = ?, message_id = ? WHERE id = ?',
-                       (str(interaction.channel.id), str(message.id), task_id))
+                       (str(message.channel.id), str(message.id), task_id))
 
             action_logger.info(f"{get_user_info(interaction)} created task {task_id}")
 
-            # Получаем созданную задачу для лога
             task = db.fetch_one('SELECT * FROM tasks WHERE id = ?', (task_id,))
             task_dict = {key: task[key] for key in task.keys()}
 
-            # Отправляем лог
             await send_task_log(
                 interaction.client,
                 task_dict,
                 "📋 **Создана задача**",
-                None,  # Убираем user_mention
+                None,
                 discord.Color.green()
             )
 
@@ -761,7 +770,7 @@ class RatingPaginationView(BaseView):
             embed.add_field(
                 name="\u200b",
                 value=(
-                    f"{medal}<@{user_id}> - {item['points']} о."
+                    f"{medal}<@{user_id}> - {item['points']}"
                 ),
                 inline=False
             )
