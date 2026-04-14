@@ -13,6 +13,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ============== КОНСТАНТЫ ==============
+TASK_STATUSES = {
+    "open": {"name": "📋 Открыта", "color": discord.Color.blue()},
+    "in_progress": {"name": "⚙️ В работе", "color": discord.Color.gold()},
+    "pending_approval": {"name": "⏳ Ожидает подтверждения", "color": discord.Color.purple()},
+    "completed": {"name": "✅ Завершена", "color": discord.Color.green()},
+    "cancelled": {"name": "❌ Отменена", "color": discord.Color.red()}
+}
+CLEAR_TYPES = {
+    "rating": {"name": "Очистить рейтинг", "emoji": "🏆", "description": "Удалить всю статистику участников"},
+    "tasks": {"name": "Очистить активные задачи", "emoji": "📋", "description": "Удалить все открытые и в работе задачи"},
+    "archive": {"name": "Очистить архив", "emoji": "📦", "description": "Удалить все завершенные задачи"}
+}
+
+# ============== НАСТРОЙКИ НАЧИСЛЕНИЯ очков ==============
+POINTS_EXECUTOR = int(os.getenv("POINTS_EXECUTOR", 0))  # Баллы исполнителю за выполненную задачу
+POINTS_AUTHOR = int(os.getenv("POINTS_AUTHOR", 0))    # Баллы автору за подтверждение задачи
+
+# ==================
+ALLOWED_USERS = [int(x) for x in os.getenv("ALLOWED_USERS", "").split(",") if x]
+
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0)) # ID канала, куда будут публиковаться логи
+TASKS_CHANNEL_ID = int(os.getenv("TASKS_CHANNEL_ID", 0))  # ID канала, куда будут публиковаться задачи
+
 # ============== НАСТРОЙКА ЛОГИРОВАНИЯ ==============
 LOG_DIR = './logs'
 if not os.path.exists(LOG_DIR):
@@ -22,8 +46,6 @@ log_formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
-TASKS_CHANNEL_ID=int(os.getenv("TASKS_CHANNEL_ID", 0))  # ID канала, куда будут публиковаться задачи
 
 action_logger = logging.getLogger('task_actions')
 action_handler = RotatingFileHandler(
@@ -70,28 +92,6 @@ async def send_log_to_channel(bot, message: str, color: discord.Color = None):
             await channel.send(embed=embed)
     except Exception as e:
         error_logger.error(f"Error sending log to channel: {e}")
-
-
-# ============== КОНСТАНТЫ ==============
-TASK_STATUSES = {
-    "open": {"name": "📋 Открыта", "color": discord.Color.blue()},
-    "in_progress": {"name": "⚙️ В работе", "color": discord.Color.gold()},
-    "pending_approval": {"name": "⏳ Ожидает подтверждения", "color": discord.Color.purple()},
-    "completed": {"name": "✅ Завершена", "color": discord.Color.green()},
-    "cancelled": {"name": "❌ Отменена", "color": discord.Color.red()}
-}
-CLEAR_TYPES = {
-    "rating": {"name": "Очистить рейтинг", "emoji": "🏆", "description": "Удалить всю статистику участников"},
-    "tasks": {"name": "Очистить активные задачи", "emoji": "📋", "description": "Удалить все открытые и в работе задачи"},
-    "archive": {"name": "Очистить архив", "emoji": "📦", "description": "Удалить все завершенные задачи"}
-}
-
-# ============== НАСТРОЙКИ НАЧИСЛЕНИЯ очков ==============
-POINTS_EXECUTOR = 2  # Баллы исполнителю за выполненную задачу
-POINTS_AUTHOR = 1    # Баллы автору за подтверждение задачи
-
-ALLOWED_USERS = [int(x) for x in os.getenv("ALLOWED_USERS", "").split(",") if x]
-
 
 def format_timestamp(dt_str: str, style: str = 'f') -> str:
     if not dt_str:
@@ -308,9 +308,6 @@ class TaskDescriptionModal(Modal, title="📝 Новая задача"):
             embed.add_field(name="📌 Статус", value="📋 Открыта", inline=True)
             embed.add_field(name="⚙️ Исполнитель", value="❌ Не назначен", inline=True)
             embed.set_footer(text=f"ID: {task_id}")
-
-            # ========== ИЗМЕНЕНИЕ ЗДЕСЬ ==========
-            TASKS_CHANNEL_ID = int(os.getenv("TASKS_CHANNEL_ID", 0))
 
             if TASKS_CHANNEL_ID:
                 target_channel = interaction.client.get_channel(TASKS_CHANNEL_ID)
