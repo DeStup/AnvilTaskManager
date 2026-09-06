@@ -13,7 +13,10 @@ class TaskBot(discord.Client):
     """Клиент со slash CommandTree и DynamicItem для кнопок задач."""
 
     def __init__(self) -> None:
-        super().__init__(intents=discord.Intents.default())
+        intents = discord.Intents.default()
+        intents.voice_states = True
+        intents.guilds = True
+        super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self) -> None:

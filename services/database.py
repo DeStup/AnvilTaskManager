@@ -101,6 +101,38 @@ def init_db() -> None:
             "ON participants (points DESC)"
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_totals (
+                user_id TEXT PRIMARY KEY,
+                user_name TEXT NOT NULL,
+                total_seconds INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                channel_name TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                duration_seconds INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_voice_sessions_ended "
+            "ON voice_sessions (ended_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_voice_sessions_user "
+            "ON voice_sessions (user_id)"
+        )
+
 
 def _run(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     return func(*args, **kwargs)
@@ -547,3 +579,117 @@ async def adelete_tasks_by_statuses(statuses: Iterable[str]) -> None:
 
 async def adelete_task(task_id: str) -> None:
     await to_thread(delete_task, task_id)
+
+
+# --- voice time tracking ---
+
+def add_voice_seconds(user_id: str, user_name: str, seconds: int) -> None:
+    if seconds <= 0:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO voice_totals (user_id, user_name, total_seconds)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                user_name = excluded.user_name,
+                total_seconds = total_seconds + excluded.total_seconds
+            """,
+            (user_id, user_name, seconds),
+        )
+
+
+def insert_voice_session(
+    *,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    channel_name: str,
+    started_at: str,
+    ended_at: str,
+    duration_seconds: int,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO voice_sessions (
+                user_id, user_name, channel_id, channel_name,
+                started_at, ended_at, duration_seconds
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                user_name,
+                channel_id,
+                channel_name,
+                started_at,
+                ended_at,
+                max(0, duration_seconds),
+            ),
+        )
+
+
+def cleanup_old_voice_sessions(retention_days: int) -> int:
+    """Удаляет сессии старше retention_days. Возвращает число удалённых строк."""
+    cutoff = datetime.now().timestamp() - retention_days * 86400
+    cutoff_iso = datetime.fromtimestamp(cutoff).isoformat()
+    with get_connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM voice_sessions WHERE ended_at < ?",
+            (cutoff_iso,),
+        )
+        return cur.rowcount
+
+
+def apply_voice_flush(
+    totals: list[tuple[str, str, int]],
+    sessions: list[dict[str, Any]],
+) -> None:
+    """Один транзакционный flush: totals + закрытые сессии."""
+    with get_connection() as conn:
+        for user_id, user_name, seconds in totals:
+            if seconds <= 0:
+                continue
+            conn.execute(
+                """
+                INSERT INTO voice_totals (user_id, user_name, total_seconds)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    user_name = excluded.user_name,
+                    total_seconds = total_seconds + excluded.total_seconds
+                """,
+                (user_id, user_name, seconds),
+            )
+        for session in sessions:
+            conn.execute(
+                """
+                INSERT INTO voice_sessions (
+                    user_id, user_name, channel_id, channel_name,
+                    started_at, ended_at, duration_seconds
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session["user_id"],
+                    session["user_name"],
+                    session["channel_id"],
+                    session["channel_name"],
+                    session["started_at"],
+                    session["ended_at"],
+                    max(0, int(session["duration_seconds"])),
+                ),
+            )
+
+
+async def aapply_voice_flush(
+    totals: list[tuple[str, str, int]],
+    sessions: list[dict[str, Any]],
+) -> None:
+    if not totals and not sessions:
+        return
+    await to_thread(apply_voice_flush, totals, sessions)
+
+
+async def acleanup_old_voice_sessions(retention_days: int) -> int:
+    return await to_thread(cleanup_old_voice_sessions, retention_days)
