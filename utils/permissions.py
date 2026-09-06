@@ -8,7 +8,7 @@ import config
 
 
 def has_permission(interaction: discord.Interaction) -> bool:
-    """Админ-меню, очистка, коррекция очков, подтверждение чужих задач."""
+    """Админ-меню, очистка, подтверждение чужих задач."""
     user = interaction.user
     if user.id in config.ALLOWED_USERS:
         return True

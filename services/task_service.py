@@ -9,7 +9,7 @@ import discord
 
 import config
 from services import database as db
-from services.channel_log import send_simple_log, send_task_event, send_task_log
+from services.channel_log import send_task_event, send_task_log
 from utils.embeds import build_task_channel_embed, build_task_detail_embed
 from utils.formatting import defer, get_user_info, link_from_task, reply
 from utils.logging_setup import action_logger, error_logger
@@ -234,14 +234,12 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str) ->
             updated["executor_id"],
             updated.get("executor_name") or "unknown",
             resolved_delta=1,
-            points_delta=config.POINTS_EXECUTOR,
         )
     if updated.get("author_id"):
         await db.aupdate_participant(
             updated["author_id"],
             updated.get("author_name") or "unknown",
             closed_delta=1,
-            points_delta=config.POINTS_AUTHOR,
         )
 
     action_logger.info(f"{get_user_info(interaction)} confirmed task {task_id}")
@@ -253,10 +251,6 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str) ->
         task_id=task_id,
         author_id=updated.get("author_id"),
         executor_id=updated.get("executor_id"),
-        extra_lines=[
-            f"**Начислено:** Исполнитель +{config.POINTS_EXECUTOR} о., "
-            f"Автор +{config.POINTS_AUTHOR} о."
-        ],
     )
     await _delete_task_message(
         interaction.client,
@@ -351,10 +345,10 @@ async def clear_data(
     interaction: discord.Interaction,
     clear_type: str,
 ) -> tuple[bool, str]:
-    """Очистка рейтинга / активных / архива. Возвращает (ok, message)."""
-    if clear_type == "rating":
+    """Очистка статистики / активных / архива. Возвращает (ok, message)."""
+    if clear_type == "stats":
         await db.aclear_participants()
-        return True, "Рейтинг очищен!"
+        return True, "Статистика очищена!"
 
     if clear_type == "tasks":
         tasks = await db.aget_tasks_by_statuses(config.ACTIVE_STATUSES)
@@ -369,29 +363,6 @@ async def clear_data(
         return True, f"Очищено {len(tasks)} завершенных задач!"
 
     return False, "Неизвестный тип очистки."
-
-
-async def correct_points(
-    interaction: discord.Interaction,
-    user_id: str,
-    user_name: str,
-    current_points: int,
-    new_value: int,
-) -> None:
-    await db.aset_participant_points(user_id, new_value)
-    action_logger.info(
-        f"{get_user_info(interaction)} changed points for {user_name} "
-        f"(ID: {user_id}) from {current_points} to {new_value}"
-    )
-    await send_simple_log(
-        interaction.client,
-        "📊 **Коррекция очков**",
-        interaction.user.mention,
-        discord.Color.blue(),
-        f"**Пользователь:** <@{user_id}>\n"
-        f"**Было:** {current_points}\n"
-        f"**Стало:** {new_value}",
-    )
 
 
 async def show_task_detail(interaction: discord.Interaction, task_id: str) -> None:
@@ -465,31 +436,6 @@ async def show_archive(interaction: discord.Interaction) -> None:
         items_per_page=config.LIST_PAGE_SIZE,
         title="📦 Архив завершенных задач",
         color=discord.Color.purple(),
-    )
-    page_items, start_num, end_num = view.page_slice()
-    embed = view.create_embed(page_items, start_num, end_num)
-    await reply(interaction, embed=embed, view=view)
-
-
-async def show_rating(interaction: discord.Interaction) -> None:
-    from handlers.views.pagination import RatingPaginationView
-
-    participants = await db.aget_rating()
-    if not participants:
-        await reply(
-            interaction,
-            embed=discord.Embed(
-                title="🏆 Рейтинг по баллам",
-                description="Пока нет участников с баллами.",
-                color=discord.Color.blue(),
-            ),
-        )
-        return
-
-    view = RatingPaginationView(
-        user_id=interaction.user.id,
-        items=participants,
-        items_per_page=config.LIST_PAGE_SIZE,
     )
     page_items, start_num, end_num = view.page_slice()
     embed = view.create_embed(page_items, start_num, end_num)

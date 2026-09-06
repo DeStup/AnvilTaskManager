@@ -34,7 +34,6 @@ def setup(bot: TaskBot) -> None:
             value=(
                 "**➕ Добавить** — /add\n"
                 "**📋 Список** — /list\n"
-                "**🏆 Рейтинг** — /rating\n"
                 "**🗑️ Удалить** — в меню"
             ),
             inline=False,
@@ -52,10 +51,6 @@ def setup(bot: TaskBot) -> None:
     @bot.tree.command(name="list", description="Список задач")
     async def task_list(interaction: discord.Interaction) -> None:
         await task_service.show_task_list(interaction)
-
-    @bot.tree.command(name="rating", description="Рейтинг")
-    async def rating(interaction: discord.Interaction) -> None:
-        await task_service.show_rating(interaction)
 
     @bot.tree.command(name="ping", description="Пинг")
     async def ping(interaction: discord.Interaction) -> None:

@@ -169,7 +169,6 @@ def update_participant(
     closed_delta: int = 0,
     created_delta: int = 0,
     resolved_delta: int = 0,
-    points_delta: int = 0,
 ) -> None:
     with get_connection() as conn:
         conn.execute(
@@ -178,13 +177,12 @@ def update_participant(
                 user_id, user_name, closed_tasks, created_tasks,
                 resolved_tasks, points
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0)
             ON CONFLICT(user_id) DO UPDATE SET
                 user_name = excluded.user_name,
                 closed_tasks = closed_tasks + ?,
                 created_tasks = created_tasks + ?,
-                resolved_tasks = resolved_tasks + ?,
-                points = points + ?
+                resolved_tasks = resolved_tasks + ?
             """,
             (
                 user_id,
@@ -192,11 +190,9 @@ def update_participant(
                 closed_delta,
                 created_delta,
                 resolved_delta,
-                points_delta,
                 closed_delta,
                 created_delta,
                 resolved_delta,
-                points_delta,
             ),
         )
 
@@ -447,29 +443,6 @@ def get_completed_tasks() -> list[dict[str, Any]]:
     )
 
 
-def get_participants_by_points() -> list[dict[str, Any]]:
-    return fetch_all(
-        """
-        SELECT user_id, user_name, points
-        FROM participants
-        ORDER BY points DESC
-        """
-    )
-
-
-def get_rating() -> list[dict[str, Any]]:
-    return fetch_all(
-        "SELECT user_id, points FROM participants ORDER BY points DESC"
-    )
-
-
-def set_participant_points(user_id: str, points: int) -> None:
-    execute(
-        "UPDATE participants SET points = ? WHERE user_id = ?",
-        (points, user_id),
-    )
-
-
 def clear_participants() -> None:
     execute("DELETE FROM participants")
 
@@ -555,18 +528,6 @@ async def aget_tasks_by_statuses(statuses: Iterable[str]) -> list[dict[str, Any]
 
 async def aget_completed_tasks() -> list[dict[str, Any]]:
     return await to_thread(get_completed_tasks)
-
-
-async def aget_participants_by_points() -> list[dict[str, Any]]:
-    return await to_thread(get_participants_by_points)
-
-
-async def aget_rating() -> list[dict[str, Any]]:
-    return await to_thread(get_rating)
-
-
-async def aset_participant_points(user_id: str, points: int) -> None:
-    await to_thread(set_participant_points, user_id, points)
 
 
 async def aclear_participants() -> None:

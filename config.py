@@ -26,9 +26,6 @@ ALLOWED_USERS: frozenset[int] = frozenset(
 LOG_CHANNEL_ID: int = int(os.getenv("LOG_CHANNEL_ID", "0"))
 TASKS_CHANNEL_ID: int = int(os.getenv("TASKS_CHANNEL_ID", "0"))
 
-POINTS_EXECUTOR: int = int(os.getenv("POINTS_EXECUTOR", "0"))
-POINTS_AUTHOR: int = int(os.getenv("POINTS_AUTHOR", "0"))
-
 LOG_MAX_BYTES: int = 10 * 1024 * 1024
 LOG_BACKUP_COUNT: int = 5
 
@@ -93,10 +90,10 @@ STATUS_COLOR: dict[str, discord.Color] = {
 }
 
 CLEAR_TYPES: dict[str, dict[str, str]] = {
-    "rating": {
-        "name": "Очистить рейтинг",
-        "emoji": "🏆",
-        "description": "Удалить всю статистику участников",
+    "stats": {
+        "name": "Очистить статистику",
+        "emoji": "📊",
+        "description": "Удалить счётчики участников (создано / закрыто / выполнено)",
     },
     "tasks": {
         "name": "Очистить активные задачи",
