@@ -14,6 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 LOG_DIR = BASE_DIR / "logs"
 DB_PATH = DATA_DIR / "tasks.db"
+TAGS_PATH = DATA_DIR / "tags.json"
 
 TOKEN: str | None = os.getenv("DISCORD_TOKEN")
 GUILD_ID: int = int(os.getenv("GUILD", "0"))
