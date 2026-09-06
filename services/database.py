@@ -410,15 +410,18 @@ def try_return_task(task_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_active_tasks() -> list[dict[str, Any]]:
+    placeholders = ",".join("?" * len(config.ACTIVE_STATUSES))
     return fetch_all(
-        """
+        f"""
         SELECT * FROM tasks
-        WHERE status IN ('open', 'in_progress')
+        WHERE status IN ({placeholders})
         ORDER BY CASE status
             WHEN 'open' THEN 1
             WHEN 'in_progress' THEN 2
+            WHEN 'pending_approval' THEN 3
         END, created_at DESC
-        """
+        """,
+        tuple(config.ACTIVE_STATUSES),
     )
 
 

@@ -52,6 +52,42 @@ async def _delete_messages_batched(
     await asyncio.gather(*(_one(t) for t in tasks))
 
 
+async def _post_task_comment_thread(
+    bot: discord.Client,
+    task: dict[str, Any],
+    *,
+    comment: str,
+    author: discord.abc.User,
+    mention_user_id: str | None = None,
+) -> None:
+    """Создаёт ветку у сообщения задачи (если нужно) и пишет комментарий."""
+    text = (comment or "").strip()
+    if not text:
+        return
+    channel_id = task.get("channel_id")
+    message_id = task.get("message_id")
+    if not channel_id or not message_id:
+        return
+    try:
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            channel = await bot.fetch_channel(int(channel_id))
+        message = await channel.fetch_message(int(message_id))
+
+        thread = message.thread
+        if thread is None:
+            thread_name = f"💬 {task['id']}"
+            thread = await message.create_thread(
+                name=thread_name[:100],
+                auto_archive_duration=10080,
+            )
+
+        mention = f"<@{mention_user_id}> " if mention_user_id else ""
+        await thread.send(f"{mention}**{author.display_name}:**\n{text}")
+    except Exception as exc:
+        error_logger.error(f"Error posting task comment thread: {exc}", exc_info=True)
+
+
 async def update_task_message(
     interaction: discord.Interaction,
     task: dict[str, Any],
@@ -156,7 +192,12 @@ async def accept_task_action(interaction: discord.Interaction, task_id: str) -> 
     await reply(interaction, f"✅ Вы приняли задачу #{task_id}!")
 
 
-async def complete_task_action(interaction: discord.Interaction, task_id: str) -> None:
+async def complete_task_action(
+    interaction: discord.Interaction,
+    task_id: str,
+    *,
+    comment: str = "",
+) -> None:
     await defer(interaction, ephemeral=True)
 
     code, updated = await db.atry_complete_task(task_id, str(interaction.user.id))
@@ -175,6 +216,12 @@ async def complete_task_action(interaction: discord.Interaction, task_id: str) -
         include_author=False,
     )
     await update_task_message(interaction, updated)
+    await _post_task_comment_thread(
+        interaction.client,
+        updated,
+        comment=comment,
+        author=interaction.user,
+    )
     await reply(
         interaction,
         f"✅ Задача #{task_id} выполнена! Ожидайте подтверждения.",
@@ -251,6 +298,7 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str) ->
         task_id=task_id,
         author_id=updated.get("author_id"),
         executor_id=updated.get("executor_id"),
+        include_link=False,
     )
     await _delete_task_message(
         interaction.client,
@@ -263,7 +311,12 @@ async def confirm_task_action(interaction: discord.Interaction, task_id: str) ->
     )
 
 
-async def return_task_action(interaction: discord.Interaction, task_id: str) -> None:
+async def return_task_action(
+    interaction: discord.Interaction,
+    task_id: str,
+    *,
+    comment: str = "",
+) -> None:
     await defer(interaction, ephemeral=True)
 
     task = await db.aget_task(task_id)
@@ -280,7 +333,6 @@ async def return_task_action(interaction: discord.Interaction, task_id: str) -> 
         return
 
     action_logger.info(f"{get_user_info(interaction)} returned task {task_id}")
-    link = link_from_task(updated)
     await send_task_event(
         interaction.client,
         "🔄 **Задача возвращена в работу**",
@@ -289,22 +341,13 @@ async def return_task_action(interaction: discord.Interaction, task_id: str) -> 
     )
 
     await update_task_message(interaction, updated)
-
-    if updated.get("executor_id"):
-        try:
-            executor = await interaction.client.fetch_user(int(updated["executor_id"]))
-            embed = discord.Embed(
-                title="🔄 Задача возвращена в работу",
-                description=f"Задача **#{task_id}** возвращена.",
-                color=discord.Color.orange(),
-            )
-            embed.add_field(name="👤 Автор", value=interaction.user.mention)
-            embed.add_field(name="📝 Описание", value=updated["description"][:200])
-            if link:
-                embed.add_field(name="🔗 Ссылка", value=f"[Перейти к задаче]({link})")
-            await executor.send(embed=embed)
-        except Exception as exc:
-            error_logger.error(f"Error notifying executor: {exc}")
+    await _post_task_comment_thread(
+        interaction.client,
+        updated,
+        comment=comment,
+        author=interaction.user,
+        mention_user_id=updated.get("executor_id"),
+    )
 
     await reply(interaction, f"🔄 Задача #{task_id} возвращена в работу.")
 
