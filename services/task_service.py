@@ -501,14 +501,30 @@ async def show_rating(interaction: discord.Interaction) -> None:
         return
 
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    lines: list[str] = []
-    for i, row in enumerate(rows, start=1):
-        mark = medals.get(i, f"`{i}.`")
+    caller_id = str(interaction.user.id)
+
+    def format_line(place: int, row: dict[str, Any]) -> str:
+        mark = medals.get(place, f"`{place}.`")
         count = int(row["resolved_tasks"] or 0)
         name = row.get("user_name") or "unknown"
         user_id = row.get("user_id")
         mention = f"<@{user_id}>" if user_id else name
-        lines.append(f"{mark} {mention} — **{count}**")
+        return f"{mark} {mention} — **{count}**"
+
+    lines: list[str] = []
+    in_top = False
+    for i, row in enumerate(rows, start=1):
+        is_you = str(row.get("user_id")) == caller_id
+        if is_you:
+            in_top = True
+        lines.append(format_line(i, row))
+
+    if not in_top:
+        me = await db.aget_user_rating(caller_id)
+        if me:
+            place = int(me["rank"])
+            lines.append("...")
+            lines.append(format_line(place, me))
 
     embed = discord.Embed(
         title="🏆 Рейтинг исполнителей",

@@ -460,6 +460,40 @@ def get_rating(limit: int = 10) -> list[dict[str, Any]]:
     )
 
 
+def get_user_rating(user_id: str) -> Optional[dict[str, Any]]:
+    """Позиция и счётчики исполнителя (None, если resolved_tasks = 0)."""
+    return fetch_one(
+        """
+        SELECT
+            p.user_id,
+            p.user_name,
+            p.resolved_tasks,
+            p.closed_tasks,
+            p.created_tasks,
+            (
+                SELECT COUNT(*) + 1
+                FROM participants o
+                WHERE o.resolved_tasks > 0
+                  AND (
+                    o.resolved_tasks > p.resolved_tasks
+                    OR (
+                        o.resolved_tasks = p.resolved_tasks
+                        AND o.user_name < p.user_name
+                    )
+                    OR (
+                        o.resolved_tasks = p.resolved_tasks
+                        AND o.user_name = p.user_name
+                        AND o.user_id < p.user_id
+                    )
+                )
+            ) AS rank
+        FROM participants p
+        WHERE p.user_id = ? AND p.resolved_tasks > 0
+        """,
+        (user_id,),
+    )
+
+
 def clear_participants() -> None:
     execute("DELETE FROM participants")
 
@@ -549,6 +583,10 @@ async def aget_completed_tasks() -> list[dict[str, Any]]:
 
 async def aget_rating(limit: int = 10) -> list[dict[str, Any]]:
     return await to_thread(get_rating, limit)
+
+
+async def aget_user_rating(user_id: str) -> Optional[dict[str, Any]]:
+    return await to_thread(get_user_rating, user_id)
 
 
 async def aclear_participants() -> None:
