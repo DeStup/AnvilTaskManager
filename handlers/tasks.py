@@ -52,6 +52,13 @@ def setup(bot: TaskBot) -> None:
     async def task_list(interaction: discord.Interaction) -> None:
         await task_service.show_task_list(interaction)
 
+    @bot.tree.command(
+        name="rating",
+        description="Рейтинг исполнителей",
+    )
+    async def rating(interaction: discord.Interaction) -> None:
+        await task_service.show_rating(interaction)
+
     @bot.tree.command(name="ping", description="Пинг")
     async def ping(interaction: discord.Interaction) -> None:
         await interaction.response.send_message("🏓 Pong!", ephemeral=True)

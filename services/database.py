@@ -446,6 +446,20 @@ def get_completed_tasks() -> list[dict[str, Any]]:
     )
 
 
+def get_rating(limit: int = 10) -> list[dict[str, Any]]:
+    """Участники с выполненными задачами, по убыванию resolved_tasks."""
+    return fetch_all(
+        """
+        SELECT user_id, user_name, resolved_tasks, closed_tasks, created_tasks
+        FROM participants
+        WHERE resolved_tasks > 0
+        ORDER BY resolved_tasks DESC, user_name ASC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
 def clear_participants() -> None:
     execute("DELETE FROM participants")
 
@@ -531,6 +545,10 @@ async def aget_tasks_by_statuses(statuses: Iterable[str]) -> list[dict[str, Any]
 
 async def aget_completed_tasks() -> list[dict[str, Any]]:
     return await to_thread(get_completed_tasks)
+
+
+async def aget_rating(limit: int = 10) -> list[dict[str, Any]]:
+    return await to_thread(get_rating, limit)
 
 
 async def aclear_participants() -> None:

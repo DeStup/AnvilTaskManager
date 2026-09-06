@@ -483,3 +483,36 @@ async def show_archive(interaction: discord.Interaction) -> None:
     page_items, start_num, end_num = view.page_slice()
     embed = view.create_embed(page_items, start_num, end_num)
     await reply(interaction, embed=embed, view=view)
+
+
+async def show_rating(interaction: discord.Interaction) -> None:
+    await defer(interaction)
+
+    rows = await db.aget_rating()
+    if not rows:
+        await reply(
+            interaction,
+            embed=discord.Embed(
+                title="🏆 Рейтинг исполнителей",
+                description="Пока нет исполнителей с выполненными задачами.",
+                color=discord.Color.gold(),
+            ),
+        )
+        return
+
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    lines: list[str] = []
+    for i, row in enumerate(rows, start=1):
+        mark = medals.get(i, f"`{i}.`")
+        count = int(row["resolved_tasks"] or 0)
+        name = row.get("user_name") or "unknown"
+        user_id = row.get("user_id")
+        mention = f"<@{user_id}>" if user_id else name
+        lines.append(f"{mark} {mention} — **{count}**")
+
+    embed = discord.Embed(
+        title="🏆 Рейтинг исполнителей",
+        description="\n".join(lines),
+        color=discord.Color.gold(),
+    )
+    await reply(interaction, embed=embed)
