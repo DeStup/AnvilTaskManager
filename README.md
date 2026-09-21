@@ -6,9 +6,132 @@ Discord-бот для учёта задач клана **Anvil Empires (NG)**: �
 
 ---
 
+## Как поднять бота
+
+### 1. Создать приложение Discord
+
+1. Откройте [Discord Developer Portal](https://discord.com/developers/applications).
+2. **New Application** → задайте имя.
+3. Вкладка **Bot** → **Reset Token** → скопируйте токен (`DISCORD_TOKEN`).
+4. Включите Privileged Gateway Intent при необходимости (для войса достаточно стандартных intents + Voice States — они уже заданы в коде).
+5. **OAuth2 → URL Generator**:
+   - Scopes: `bot`, `applications.commands`
+   - Bot Permissions: как минимум `Send Messages`, `Embed Links`, `Read Message History`, `Connect`/`View Channels` для войса; для админ-функций удобнее `Manage Messages` (удаление сообщений задач).
+6. Откройте сгенерированную ссылку и добавьте бота на сервер.
+
+### 2. Узнать ID каналов и пользователей
+
+В Discord: Настройки → Расширенные → **Режим разработчика**.
+
+- ПКМ по серверу → **Копировать ID сервера** → `GUILD`
+- ПКМ по каналу задач → **Копировать ID** → `TASKS_CHANNEL_ID`
+- ПКМ по каналу логов → **Копировать ID** → `LOG_CHANNEL_ID`
+- ПКМ по пользователю → **Копировать ID** → в `ALLOWED_USERS` (через запятую)
+
+### 3. Клонировать и настроить окружение
+
+```bash
+git clone <url-репозитория>
+cd AnvilTaskManager
+cp .env.example .env
+```
+
+Заполните `.env`:
+
+```env
+DISCORD_TOKEN=ваш_токен
+GUILD=id_сервера
+ALLOWED_USERS=id1,id2
+LOG_CHANNEL_ID=id_канала_логов
+TASKS_CHANNEL_ID=id_канала_задач
+```
+
+| Переменная | Обязательно | Назначение |
+|------------|-------------|------------|
+| `DISCORD_TOKEN` | да | Токен бота |
+| `GUILD` | рекомендуется | ID гильдии; slash-команды синкаются сразу на сервер. Если `0` — глобальный sync (до часа) |
+| `ALLOWED_USERS` | нет | Доп. админы по Discord ID |
+| `LOG_CHANNEL_ID` | нет | Канал событий (создание, принятие, подтверждение…). `0` — без логов в Discord |
+| `TASKS_CHANNEL_ID` | рекомендуется | Канал доски задач. Если `0` — пост в канал, где вызвали `/add` |
+
+### 4. Запуск локально
+
+Нужен Python 3.12+.
+
+```bash
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# Linux / macOS
+source .venv/bin/activate
+
+pip install -r requirements.txt
+python main.py
+```
+
+При старте создаются каталоги `data/`, `logs/` и БД `data/tasks.db`. В консоли должно появиться: `Бот <имя> запущен!`
+
+### 5. Запуск через Docker
+
+```bash
+docker compose up -d --build
+```
+
+- тома: `./data` и `./logs` монтируются в контейнер;
+- логи процесса: `logs/output.log`, `logs/errors.log`;
+- перезапуск: `unless-stopped`.
+
+Остановка:
+
+```bash
+docker compose down
+```
+
+### 6. Проверка
+
+1. В Discord введите `/ping` — ответ `Pong!`.
+2. `/add` — создайте тестовую задачу, убедитесь что сообщение появилось в канале задач.
+3. С другого аккаунта нажмите **Принять** → **Завершить** → с авторского **Подтвердить**.
+4. `/rating` — исполнитель должен появиться в рейтинге.
+
+Если slash-команд нет: проверьте `GUILD`, перезапустите бота, подождите несколько секунд (для глобального sync — дольше).
+
+---
+
+## Структура проекта
+
+```
+main.py                 # точка входа
+bot.py                  # TaskBot + sync команд + DynamicItem
+config.py               # env и константы
+handlers/
+  events.py             # on_ready
+  tasks.py              # /menu /add /list /rating /ping
+  tags.py               # /tag
+  voice.py              # on_voice_state_update
+  views/                # кнопки, модалки, меню, очистка
+services/
+  database.py           # SQLite
+  task_service.py       # жизненный цикл задач
+  tag_service.py        # теги из JSON
+  voice_service.py      # учёт войса
+  channel_log.py        # логи в Discord
+utils/                  # логи, embeds, права, форматирование
+data/
+  tasks.db              # БД (создаётся при запуске)
+  tags.json             # справочник /tag
+.env.example            # шаблон переменных
+docker-compose.yaml
+Dockerfile
+```
+
+---
+
 ## Концепция
 
-Бот ведёт доску задач в Discord. Участник создаёт задачу (`/add`), другой участник принимает её кнопкой на сообщении, выполняет и отправляет на подтверждение. Автор (или администратор) подтверждает выполнение — задача уходит в архив, а исполнитель получает +1 в рейтинге.
+Бот ведёт доску задач в Discord. Участник создаёт задачу (`/add`), другой участник принимает её кнопкой на сообщении, выполняет и отправляет на подтверждение. Автор (или администратор) подтверждает работу — задача уходит в архив, а исполнитель получает +1 в рейтинге.
 
 ### Жизненный цикл задачи
 
@@ -157,107 +280,13 @@ open → in_progress → pending_approval → completed
 
 ---
 
-## Как поднять бота
-
-### 1. Создать приложение Discord
-
-1. Откройте [Discord Developer Portal](https://discord.com/developers/applications).
-2. **New Application** → задайте имя.
-3. Вкладка **Bot** → **Reset Token** → скопируйте токен (`DISCORD_TOKEN`).
-4. Включите Privileged Gateway Intent при необходимости (для войса достаточно стандартных intents + Voice States — они уже заданы в коде).
-5. **OAuth2 → URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Bot Permissions: как минимум `Send Messages`, `Embed Links`, `Read Message History`, `Connect`/`View Channels` для войса; для админ-функций удобнее `Manage Messages` (удаление сообщений задач).
-6. Откройте сгенерированную ссылку и добавьте бота на сервер.
-
-### 2. Узнать ID каналов и пользователей
-
-В Discord: Настройки → Расширенные → **Режим разработчика**.
-
-- ПКМ по серверу → **Копировать ID сервера** → `GUILD`
-- ПКМ по каналу задач → **Копировать ID** → `TASKS_CHANNEL_ID`
-- ПКМ по каналу логов → **Копировать ID** → `LOG_CHANNEL_ID`
-- ПКМ по пользователю → **Копировать ID** → в `ALLOWED_USERS` (через запятую)
-
-### 3. Клонировать и настроить окружение
-
-```bash
-git clone <url-репозитория>
-cd AnvilTaskManager
-cp .env.example .env
-```
-
-Заполните `.env`:
-
-```env
-DISCORD_TOKEN=ваш_токен
-GUILD=id_сервера
-ALLOWED_USERS=id1,id2
-LOG_CHANNEL_ID=id_канала_логов
-TASKS_CHANNEL_ID=id_канала_задач
-```
-
-| Переменная | Обязательно | Назначение |
-|------------|-------------|------------|
-| `DISCORD_TOKEN` | да | Токен бота |
-| `GUILD` | рекомендуется | ID гильдии; slash-команды синкаются сразу на сервер. Если `0` — глобальный sync (до часа) |
-| `ALLOWED_USERS` | нет | Доп. админы по Discord ID |
-| `LOG_CHANNEL_ID` | нет | Канал событий (создание, принятие, подтверждение…). `0` — без логов в Discord |
-| `TASKS_CHANNEL_ID` | рекомендуется | Канал доски задач. Если `0` — пост в канал, где вызвали `/add` |
-
-### 4. Запуск локально
-
-Нужен Python 3.12+.
-
-```bash
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# Linux / macOS
-source .venv/bin/activate
-
-pip install -r requirements.txt
-python main.py
-```
-
-При старте создаются каталоги `data/`, `logs/` и БД `data/tasks.db`. В консоли должно появиться: `Бот <имя> запущен!`
-
-### 5. Запуск через Docker
-
-```bash
-docker compose up -d --build
-```
-
-- тома: `./data` и `./logs` монтируются в контейнер;
-- логи процесса: `logs/output.log`, `logs/errors.log`;
-- перезапуск: `unless-stopped`.
-
-Остановка:
-
-```bash
-docker compose down
-```
-
-### 6. Проверка
-
-1. В Discord введите `/ping` — ответ `Pong!`.
-2. `/add` — создайте тестовую задачу, убедитесь что сообщение появилось в канале задач.
-3. С другого аккаунта нажмите **Принять** → **Завершить** → с авторского **Подтвердить**.
-4. `/rating` — исполнитель должен появиться в рейтинге.
-
-Если slash-команд нет: проверьте `GUILD`, перезапустите бота, подождите несколько секунд (для глобального sync — дольше).
-
----
-
 ## Администрирование
 
 ### Повседневная работа
 
 1. Участники создают задачи через `/add`.
 2. Исполнители берут задачи кнопками на сообщениях в канале задач.
-3. Автор подтверждает выполнение — задача уходит в архив (`/menu` → **Архив**).
+3. Автор подтверждает работу — задача уходит в архив (`/menu` → **Архив**).
 4. Рейтинг смотрят через `/rating`.
 
 ### Теги (`data/tags.json`)
@@ -306,33 +335,3 @@ docker compose down
 - писать сообщения и embeds;
 - читать историю;
 - удалять **свои** сообщения задач (после подтверждения / очистки);
-- получать Voice State Update (учёт войса).
-
----
-
-## Структура проекта
-
-```
-main.py                 # точка входа
-bot.py                  # TaskBot + sync команд + DynamicItem
-config.py               # env и константы
-handlers/
-  events.py             # on_ready
-  tasks.py              # /menu /add /list /rating /ping
-  tags.py               # /tag
-  voice.py              # on_voice_state_update
-  views/                # кнопки, модалки, меню, очистка
-services/
-  database.py           # SQLite
-  task_service.py       # жизненный цикл задач
-  tag_service.py        # теги из JSON
-  voice_service.py      # учёт войса
-  channel_log.py        # логи в Discord
-utils/                  # логи, embeds, права, форматирование
-data/
-  tasks.db              # БД (создаётся при запуске)
-  tags.json             # справочник /tag
-.env.example            # шаблон переменных
-docker-compose.yaml
-Dockerfile
-```
